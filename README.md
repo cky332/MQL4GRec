@@ -42,13 +42,13 @@ Preprocessed data, pretrained checkpoints, and training logs:
 ### Training the Quantitative Translator
 ```
 cd index
-bash script/run.sh          # Run training  
-bash script/gen_code_dis.sh # Generate code  
+bash scripts/run.sh          # Run training  
+bash scripts/gen_code_dis.sh # Generate code  
 ```
 
 ### Pre-training
 ```
-bash script/pretrain.sh
+bash scripts/pretrain.sh
 ```
 
 ### Fine-tuning
