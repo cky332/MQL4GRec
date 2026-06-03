@@ -7,8 +7,7 @@ import datetime
 import numpy as np
 import torch
 from torch.utils.data import ConcatDataset
-from data import SeqRecDataset, FusionSeqRecDataset, ItemImageDataset, ItemImageDelDataset, FusionSeqRecDelDataset, SeqRecImageDelDataset, \
-    FGImageDataset, FGFusionSeqRecDataset
+from data import SeqRecDataset, FusionSeqRecDataset, ItemImageDataset
 
 def parse_global_args(parser):
 
