@@ -14,8 +14,14 @@
 # Env overrides: EPOCHS, BATCH, NUM_BEAMS, DATASET, GPUS (nproc_per_node), LOAD_MODEL_NAME
 # ---------------------------------------------------------------------------
 set -e
+set -o pipefail   # so a failing torchrun isn't masked by the `| tee` and the script stops
 
 export WANDB_MODE=disabled
+# RTX 40-series (e.g. 4090) GPUs don't support NCCL P2P/IB. torchrun+accelerate
+# initialize a distributed state even on a single GPU and will crash without these.
+# (accelerate raises: "Using RTX 4000 series doesn't support ... P2P or IB".)
+export NCCL_P2P_DISABLE=1
+export NCCL_IB_DISABLE=1
 
 DATASET=${DATASET:-Instruments}
 DATA_PATH=./data/

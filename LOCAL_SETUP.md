@@ -118,6 +118,10 @@ python ensemble.py --output_dir $OUT --dataset $DATASET --data_path ./data/ \
 
 ## 5. 常见问题排查
 
+- **`NotImplementedError: Using RTX 4000 series doesn't support ... P2P or IB`**
+  (RTX 40 系消费卡,如 4090):`run_local.sh` 已内置
+  `export NCCL_P2P_DISABLE=1` 与 `export NCCL_IB_DISABLE=1` 修复。若你手动用
+  `torchrun` 跑,需自己先 export 这两个变量。
 - **`ImportError: cannot import name 'ItemImageDelDataset'`**:已修复(`utils.py` 原本
   import 了 5 个未随仓库提供的数据集类)。如仍出现,确认你在本分支上。注意:这意味着
   `*del` / `*fg*` 这些任务本地不可用(对应类没随仓库发布),但文档中的 5 个任务不受影响。
