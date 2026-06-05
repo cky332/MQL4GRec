@@ -1,0 +1,23 @@
+# Core dependencies for running MQL4GRec (fine-tune + inference + ensemble).
+#
+# NOTE on PyTorch: install torch SEPARATELY first, matching your CUDA version,
+# because the correct wheel depends on your driver. The repo was tested with
+# torch==2.1.0. Example (CUDA 12.1):
+#   pip install torch==2.1.0 --index-url https://download.pytorch.org/whl/cu121
+# Example (CUDA 11.8):
+#   pip install torch==2.1.0 --index-url https://download.pytorch.org/whl/cu118
+#
+# transformers MUST be <= 4.45.0 (the code uses the old `evaluation_strategy`
+# TrainingArguments name, removed in 4.46; README also reports 4.45.0 converges well).
+transformers==4.45.0
+accelerate==0.28.0
+sentencepiece==0.2.0
+numpy==1.26.4   # keep <2.0; numpy 2.x is incompatible with torch 2.1
+tqdm
+
+# ---- Optional: only needed if you want to REGENERATE data from raw images ----
+# (not required when using the pre-built indices shipped in data/Instruments/)
+# ftfy
+# regex
+# Pillow
+# requests
