@@ -36,6 +36,15 @@ NUM_BEAMS=${NUM_BEAMS:-20}
 GPUS=${GPUS:-1}
 PORT=${PORT:-2309}
 
+# Expose exactly $GPUS GPU(s) to this run unless the user already pinned them.
+# IMPORTANT on multi-GPU machines: a single-process run (GPUS=1) must see only ONE
+# GPU, otherwise finetune.py enables T5's deprecated/broken model-parallel path and
+# crashes with: "'T5Stack' object has no attribute 'first_device'".
+if [ -z "${CUDA_VISIBLE_DEVICES:-}" ]; then
+    export CUDA_VISIBLE_DEVICES=$(seq -s, 0 $((GPUS - 1)))
+fi
+echo "Using CUDA_VISIBLE_DEVICES=$CUDA_VISIBLE_DEVICES"
+
 OUTPUT_DIR=./log/$DATASET
 mkdir -p "$OUTPUT_DIR"
 

@@ -122,6 +122,10 @@ python ensemble.py --output_dir $OUT --dataset $DATASET --data_path ./data/ \
   (RTX 40 系消费卡,如 4090):`run_local.sh` 已内置
   `export NCCL_P2P_DISABLE=1` 与 `export NCCL_IB_DISABLE=1` 修复。若你手动用
   `torchrun` 跑,需自己先 export 这两个变量。
+- **`AttributeError: 'T5Stack' object has no attribute 'first_device'`**
+  (多卡机器上跑单卡):`finetune.py` 在 `不是DDP 且 可见GPU>1` 时会误开 T5 的
+  废弃模型并行。`run_local.sh` 已通过设置 `CUDA_VISIBLE_DEVICES`(只暴露 `$GPUS` 张卡)
+  规避。手动跑时请先 `export CUDA_VISIBLE_DEVICES=0`。
 - **`ImportError: cannot import name 'ItemImageDelDataset'`**:已修复(`utils.py` 原本
   import 了 5 个未随仓库提供的数据集类)。如仍出现,确认你在本分支上。注意:这意味着
   `*del` / `*fg*` 这些任务本地不可用(对应类没随仓库发布),但文档中的 5 个任务不受影响。
