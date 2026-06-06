@@ -136,3 +136,59 @@ def centroid_from_embeddings(emb_npy_path, item_ids):
     emb = np.load(emb_npy_path)
     rows = emb[np.array(item_ids, dtype=np.int64)].astype(np.float32)
     return rows.mean(axis=0)
+
+
+def coldest_items(inter_json_path, n, n_items):
+    """Return the n least-interacted item ids (incl. items with 0 interactions).
+
+    These are the realistic 'promotion' victims: obscure products an attacker
+    would want to push up. Ties broken by item id for determinism.
+    """
+    counts = item_popularity(inter_json_path)
+    ranked = sorted(range(n_items), key=lambda i: (counts.get(i, 0), i))
+    return ranked[:n]
+
+
+def build_promote_tasks(inter_json_path, targets, num_tasks, num_neg=20,
+                        seed=2024, n_items=None, include_true_positive=True):
+    """Sample PROMOTION tasks: for each target item T (an item the user did NOT
+    interact with), build (user, pos=T, history, negs) so that downstream code
+    attacks T and ranks T among [T] + negs.
+
+    negs = [the user's genuine held-out next item] + random non-interacted items,
+    so we can see whether the promoted T can outrank truly relevant items.
+    The schema matches build_tasks(), so clip_attack/requantize/run_eval are reused
+    unchanged (they treat 'pos' as the item to attack & rank).
+    """
+    import random
+    rng = random.Random(seed)
+    inters = load_json(inter_json_path)
+    if n_items is None:
+        n_items = 1 + max(int(i) for items in inters.values() for i in items)
+
+    users = [u for u, items in inters.items() if len(items) >= 2]
+    per = max(1, num_tasks // max(len(targets), 1))
+
+    tasks = []
+    for T in targets:
+        cand_users = [u for u in users if T not in {int(i) for i in inters[u]}]
+        rng.shuffle(cand_users)
+        taken = 0
+        for u in cand_users:
+            if taken >= per:
+                break
+            items = [int(i) for i in inters[u]]
+            seen = set(items)
+            history = items[:-1]
+            negs = [items[-1]] if include_true_positive else []  # genuine competitor
+            guard = 0
+            while len(negs) < num_neg and guard < num_neg * 50:
+                c = rng.randrange(n_items)
+                guard += 1
+                if c not in seen and c != T and c not in negs:
+                    negs.append(c)
+            if len(negs) < num_neg:
+                continue
+            tasks.append({"user": u, "pos": T, "history": history, "negs": negs})
+            taken += 1
+    return tasks

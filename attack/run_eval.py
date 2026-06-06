@@ -73,7 +73,9 @@ def main():
     text_index = C.load_index_json(os.path.join(ddir, f"{args.dataset}.index_lemb.json"))
     img_clean = C.load_index_json(os.path.join(ddir, f"{args.dataset}.index_vitemb.json"))
     img_att = C.load_index_json(args.attacked_index)
-    tasks = C.load_json(args.tasks)["tasks"]
+    tasks_obj = C.load_json(args.tasks)
+    tasks = tasks_obj["tasks"]
+    mode = tasks_obj.get("mode", "standard")
     diag = C.load_json(args.requant_diag) if args.requant_diag and os.path.exists(args.requant_diag) else {}
 
     # Only tasks whose victim was actually attacked (present in the attacked set).
@@ -115,7 +117,14 @@ def main():
 
     n = len(tasks)
     n_changed = sum(1 for t in tasks if bool(diag.get(str(t["pos"]), {}).get("code_changed", True)))
-    print(f"\nEvaluated {n} tasks ({args.dataset}).")
+    print(f"\nEvaluated {n} tasks ({args.dataset}) | mode = {mode}.")
+    if mode == "promote":
+        print("  PROMOTION test: the attacked item is a COLD item the user did NOT interact with.")
+        print("  'rank' = that target's rank among 21 (LOWER = more successfully promoted);")
+        print("  clean rank should be high/bottom (irrelevant). 'attack helps' = target rose.")
+    else:
+        print("  STANDARD test: the attacked item is the user's true next item (already ranks well);")
+        print("  here the attack can only hurt it -> measures robustness, not promotion.")
     if diag:
         moved = sum(1 for t in tasks if diag.get(str(t["pos"]), {}).get("moved_toward_popular"))
         print(f"  code changed by attack : {n_changed}/{n} = {n_changed/max(n,1):.1%}")

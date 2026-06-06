@@ -38,6 +38,8 @@ MODE=${MODE:-pixel}
 DATASET=${DATASET:-Instruments}
 DATA_PATH=$(abspath "${DATA_PATH:-data}")
 NUM_TASKS=${NUM_TASKS:-200}
+PROMOTE=${PROMOTE:-0}                    # 1 = promote COLD non-interacted target items
+N_TARGETS=${N_TARGETS:-5}               # [promote] how many cold targets
 EPS_LIST=${EPS_LIST:-"16 32 64"}        # pixel: L_inf in /255
 RHO_LIST=${RHO_LIST:-"10 20 30 50"}     # embedding: L2 budget in % of ||x||
 STEPS=${STEPS:-30}
@@ -55,7 +57,9 @@ cd "$(dirname "$0")"                     # into attack/ (absolute paths above st
 COMMON="--data_path $DATA_PATH --dataset $DATASET"
 
 echo "=== [1] sample tasks ==="
-python sample_tasks.py $COMMON --num_tasks "$NUM_TASKS"
+SAMPLE_ARGS="--num_tasks $NUM_TASKS"
+[ "$PROMOTE" = "1" ] && SAMPLE_ARGS="$SAMPLE_ARGS --promote --n_targets $N_TARGETS"
+python sample_tasks.py $COMMON $SAMPLE_ARGS
 
 if [ "$MODE" = "pixel" ]; then
     : "${META_DATA_PATH:?MODE=pixel needs META_DATA_PATH (dir with meta_<FullName>.json.gz)}"

@@ -37,6 +37,20 @@ bash attack/run_attack.sh
 `"16 32 64"`,/255)、`RHO_LIST`(嵌入,默认 `"10 20 30 50"`,即 %)、`STEPS`、`MODEL_CKPT`、
 `GPUS`(默认 0,单卡)。
 
+## 推广测试 vs 反噬测试(攻击对象的选择)
+
+- **默认(standard)**:攻击对象 = 用户的**真实下一个商品**(正样本)。它本就排得高,改码只会更差
+  → 测的是**鲁棒性/反噬**,不是推广。
+- **`PROMOTE=1`(promote)**:攻击对象 = 用户**没交互过**的**冷门目标商品** T,在 `[T] + (真实正样本
+  + 随机非交互负样本)` 中给 T 排名 → 测**能否把 T 推进用户的前列**(`rank` 越低=推广越成功)。
+  目标商品默认取交互最少的 `N_TARGETS`(默认 5)个;也可 `--targets id1,id2` 指定。
+
+```bash
+# 推广测试(冷门商品,嵌入模式,立刻可跑):
+RQVAE_CKPT=index/log/Instruments/ViT-L-14_256/best_collision_model.pth \
+MODE=embedding PROMOTE=1 N_TARGETS=5 bash attack/run_attack.sh
+```
+
 ## 流水线(也可单步运行,均在 `attack/` 目录下)
 | 阶段 | 脚本 | 作用 | 产物(`attack/artifacts/`) |
 |---|---|---|---|
