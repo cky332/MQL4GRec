@@ -42,6 +42,7 @@ PROMOTE=${PROMOTE:-0}                    # 1 = promote COLD non-interacted targe
 N_TARGETS=${N_TARGETS:-5}               # [promote] how many cold targets
 HIJACK_ID=${HIJACK_ID:-29}              # [hijack] popular item whose code is forged onto targets
 TARGET_ID=${TARGET_ID:-}                # [pixel/embedding] aim at THIS item's embedding (not the centroid)
+EMB_LOSS=${EMB_LOSS:-cosine}           # [embedding] cosine (direction only) or l2 (full vector)
 [ "$MODE" = "hijack" ] && PROMOTE=1     # hijack only makes sense as a promotion attack
 EPS_LIST=${EPS_LIST:-"16 32 64"}        # pixel: L_inf in /255
 RHO_LIST=${RHO_LIST:-"10 20 30 50"}     # embedding: L2 budget in % of ||x||
@@ -101,13 +102,14 @@ run_one() {  # $1 = TAG (eps16 / emb20), $2... = clip_attack args
 
 TARG_ARG=""; TSUF=""
 if [ -n "$TARGET_ID" ]; then TARG_ARG="--target_id $TARGET_ID"; TSUF="t${TARGET_ID}"; fi
+LOSSMARK=""; [ "$EMB_LOSS" = "l2" ] && LOSSMARK="L2"
 for B in $BUDGETS; do
     if [ "$MODE" = "pixel" ]; then
         EPS=$(python3 -c "print($B/255)")
         run_one "eps${B}${TSUF}" --mode pixel --eps "$EPS" --save_adv_images $TARG_ARG
     else
         RHO=$(python3 -c "print($B/100)")
-        run_one "emb${B}${TSUF}" --mode embedding --emb_rho "$RHO" $TARG_ARG
+        run_one "emb${B}${LOSSMARK}${TSUF}" --mode embedding --emb_rho "$RHO" --emb_loss "$EMB_LOSS" $TARG_ARG
     fi
 done
 

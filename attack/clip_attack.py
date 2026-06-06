@@ -67,15 +67,24 @@ def save_image(x_pix, path):
 
 
 # ----------------------- embedding mode (no images) ---------------------------
-def pgd_embedding(x0, target, rho, steps, alpha_frac=0.1):
-    """PGD on the stored embedding; ||delta||_2 <= rho * ||x0||."""
+def pgd_embedding(x0, target, rho, steps, alpha_frac=0.1, loss_type="cosine"):
+    """PGD on the stored embedding; ||delta||_2 <= rho * ||x0||.
+
+    loss_type='cosine' matches DIRECTION only (magnitude free); 'l2' matches the
+    FULL vector (direction+magnitude), so at large budget adv -> target exactly,
+    which quantizes to target's exact code. Both are the same (black-box) threat
+    model -- only the attacker's own loss on the public CLIP changes.
+    """
     tdir = target / target.norm()
     budget = rho * x0.norm()
     alpha = alpha_frac * budget
     delta = torch.zeros_like(x0, requires_grad=True)
     for _ in range(steps):
         x = x0 + delta
-        loss = 1.0 - F.cosine_similarity(x.unsqueeze(0), tdir.unsqueeze(0)).squeeze()
+        if loss_type == "l2":
+            loss = ((x - target) ** 2).sum()
+        else:
+            loss = 1.0 - F.cosine_similarity(x.unsqueeze(0), tdir.unsqueeze(0)).squeeze()
         grad = torch.autograd.grad(loss, delta)[0]
         with torch.no_grad():
             delta = delta - alpha * grad / (grad.norm() + 1e-12)
@@ -107,6 +116,8 @@ def main():
     ap.add_argument("--eps", type=float, default=16/255, help="[pixel] L_inf budget")
     ap.add_argument("--alpha", type=float, default=None, help="[pixel] PGD step (default eps/4)")
     ap.add_argument("--emb_rho", type=float, default=0.2, help="[embedding] L2 budget as frac of ||x||")
+    ap.add_argument("--emb_loss", choices=["cosine", "l2"], default="cosine",
+                    help="[embedding] cosine matches direction only; l2 matches the full vector")
     ap.add_argument("--target_id", type=int, default=None,
                     help="push toward THIS single item's embedding instead of the popular centroid")
     ap.add_argument("--steps", type=int, default=30)
@@ -160,12 +171,13 @@ def main():
                 save_image(torch.clamp(x0 + (x_adv - x0) * 10, 0, 1),
                            os.path.join(img_out, f"{vid}_pert_x10.jpg"))
     else:  # embedding mode
-        tag = f"emb{round(args.emb_rho * 100)}{suffix}"
+        lossmark = "L2" if args.emb_loss == "l2" else ""
+        tag = f"emb{round(args.emb_rho * 100)}{lossmark}{suffix}"
         emb = np.load(emb_npy)
         victims = C.load_json(args.victims)
         for vid in victims:
             x0 = torch.tensor(emb[int(vid)].astype(np.float32), device=device)
-            adv_emb = pgd_embedding(x0, target, args.emb_rho, args.steps)
+            adv_emb = pgd_embedding(x0, target, args.emb_rho, args.steps, loss_type=args.emb_loss)
             adv_embs[str(vid)] = adv_emb.cpu().numpy()
             clean_embs[str(vid)] = x0.cpu().numpy()
             diag[str(vid)] = _diag(x0, adv_emb, target,
