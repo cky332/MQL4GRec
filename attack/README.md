@@ -14,14 +14,28 @@ PGD),让其 CLIP 嵌入靠近**热门 top-20 商品的嵌入质心**,看该商�
 3. Amazon-2018 元数据目录,含 `meta_Musical_Instruments.json.gz`(下载受害封面用)。
 4. 依赖与主项目一致(`requirements.txt`:torch / torchvision / transformers≤4.45 / numpy<2 / Pillow / requests)。
 
+## 两种攻击模式
+
+- **`MODE=pixel`(默认,忠实 MLLM-MSR 移植)**:对封面**像素**做 PGD(L∞≤ε),需要原始图片
+  → 需 `META_DATA_PATH`(Amazon 元数据)。
+- **`MODE=embedding`(兜底,无需图片/元数据/CLIP)**:直接对商品**已有的 CLIP 嵌入**做 PGD
+  (L2 预算 `rho·‖x‖`),只需 RQ-VAE。不那么"忠实"(略去像素→CLIP 这段),但能立刻测出
+  核心问题(量化是否被翻、ensemble 是否稀释)。
+
 ## 一键运行
 ```bash
+# 嵌入层模式(立刻可跑,不需要图片):
+RQVAE_CKPT=index/log/Instruments/ViT-L-14_256/best_collision_model.pth \
+MODE=embedding bash attack/run_attack.sh
+
+# 像素模式(忠实版,需要 Amazon 元数据):
 META_DATA_PATH=/path/to/amazon18/Metadata \
 RQVAE_CKPT=index/log/Instruments/ViT-L-14_256/best_collision_model.pth \
 bash attack/run_attack.sh
 ```
-可调环境变量:`NUM_TASKS`(默认 200)、`EPS_LIST`(默认 `"16 32 64"`,单位 /255)、`STEPS`、
-`MODEL_CKPT`、`GPUS`(默认 0,单卡)。
+可调环境变量:`MODE`(pixel/embedding)、`NUM_TASKS`(默认 200)、`EPS_LIST`(像素,默认
+`"16 32 64"`,/255)、`RHO_LIST`(嵌入,默认 `"10 20 30 50"`,即 %)、`STEPS`、`MODEL_CKPT`、
+`GPUS`(默认 0,单卡)。
 
 ## 流水线(也可单步运行,均在 `attack/` 目录下)
 | 阶段 | 脚本 | 作用 | 产物(`attack/artifacts/`) |

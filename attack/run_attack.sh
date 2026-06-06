@@ -1,62 +1,87 @@
 #!/bin/bash
 # ---------------------------------------------------------------------------
-# End-to-end runner for the MLLM-MSR-style pixel-PGD attack on MQL4GRec.
-#   sample_tasks -> download_subset -> clip_attack(eps sweep) -> requantize -> run_eval
+# End-to-end runner for the attack on MQL4GRec.
 #
-# Prerequisites (see attack/README.md):
-#   * a finetuned recommender at ./log/Instruments  (from scripts/run_local.sh)
-#   * the authors' RQ-VAE ckpt at $RQVAE_CKPT
-#   * Amazon-2018 metadata dir $META_DATA_PATH containing meta_<FullName>.json.gz
+#   MODE=pixel     (default): sample_tasks -> download_subset -> clip_attack(PGD
+#                  on covers, L_inf eps sweep) -> requantize -> run_eval.
+#                  Needs raw images: set META_DATA_PATH (Amazon metadata dir).
 #
-# Usage:
-#   META_DATA_PATH=/path/to/amazon18/Metadata \
+#   MODE=embedding (no images / no metadata): sample_tasks -> clip_attack(PGD on
+#                  the stored embedding, L2 rho sweep) -> requantize -> run_eval.
+#
+# Prerequisites (both modes):
+#   * finetuned recommender at $MODEL_CKPT (./log/Instruments)
+#   * RQ-VAE ckpt at $RQVAE_CKPT
+#
+# Examples:
+#   # image-free, runnable right now:
 #   RQVAE_CKPT=index/log/Instruments/ViT-L-14_256/best_collision_model.pth \
+#   MODE=embedding bash attack/run_attack.sh
+#
+#   # faithful pixel attack (needs Amazon metadata):
+#   RQVAE_CKPT=...best_collision_model.pth META_DATA_PATH=/path/amazon18/Metadata \
 #   bash attack/run_attack.sh
 #
-# Overrides: DATASET, NUM_TASKS, EPS_LIST (in /255 units), MODEL_CKPT, GPUS, STEPS
+# Overrides: MODE, DATASET, NUM_TASKS, EPS_LIST (/255), RHO_LIST (%), STEPS,
+#            MODEL_CKPT, GPUS
 # ---------------------------------------------------------------------------
 set -e
 set -o pipefail
-export NCCL_P2P_DISABLE=1 NCCL_IB_DISABLE=1   # harmless; consistent with run_local.sh
+export NCCL_P2P_DISABLE=1 NCCL_IB_DISABLE=1
 
-cd "$(dirname "$0")"                          # run from attack/ (imports use _common)
+cd "$(dirname "$0")"
 
+MODE=${MODE:-pixel}
 DATASET=${DATASET:-Instruments}
 DATA_PATH=${DATA_PATH:-../data}
 NUM_TASKS=${NUM_TASKS:-200}
-EPS_LIST=${EPS_LIST:-"16 32 64"}              # L_inf budgets in /255
+EPS_LIST=${EPS_LIST:-"16 32 64"}        # pixel: L_inf in /255
+RHO_LIST=${RHO_LIST:-"10 20 30 50"}     # embedding: L2 budget in % of ||x||
 STEPS=${STEPS:-30}
 MODEL_CKPT=${MODEL_CKPT:-../log/$DATASET}
 RQVAE_CKPT=${RQVAE_CKPT:-../index/log/$DATASET/ViT-L-14_256/best_collision_model.pth}
 GPUS=${GPUS:-0}
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPUS}
 
-: "${META_DATA_PATH:?set META_DATA_PATH to the dir with meta_<FullName>.json.gz}"
 [ -f "$RQVAE_CKPT" ] || { echo "ERROR: RQ-VAE ckpt not found: $RQVAE_CKPT"; exit 1; }
 [ -d "$MODEL_CKPT" ] || { echo "ERROR: recommender dir not found: $MODEL_CKPT"; exit 1; }
 
-echo "=== [1/4] sample tasks ==="
-python sample_tasks.py --data_path "$DATA_PATH" --dataset "$DATASET" --num_tasks "$NUM_TASKS"
+COMMON="--data_path $DATA_PATH --dataset $DATASET"
 
-echo "=== [2/4] download victim covers ==="
-python download_subset.py --data_path "$DATA_PATH" --dataset "$DATASET" \
-    --meta_data_path "$META_DATA_PATH"
+echo "=== [1] sample tasks ==="
+python sample_tasks.py $COMMON --num_tasks "$NUM_TASKS"
 
-for E in $EPS_LIST; do
-    EPS=$(python3 -c "print($E/255)")
-    echo "=== [3/4] PGD attack (eps=$E/255) ==="
-    python clip_attack.py --data_path "$DATA_PATH" --dataset "$DATASET" \
-        --eps "$EPS" --steps "$STEPS" --save_adv_images
+if [ "$MODE" = "pixel" ]; then
+    : "${META_DATA_PATH:?MODE=pixel needs META_DATA_PATH (dir with meta_<FullName>.json.gz)}"
+    echo "=== [2] download victim covers ==="
+    python download_subset.py $COMMON --meta_data_path "$META_DATA_PATH"
+    BUDGETS="$EPS_LIST"
+else
+    echo "=== [2] (embedding mode: no image download) ==="
+    BUDGETS="$RHO_LIST"
+fi
 
-    echo "=== [3b] re-quantize (eps=$E/255) ==="
-    python requantize.py --data_path "$DATA_PATH" --dataset "$DATASET" \
-        --ckpt_path "$RQVAE_CKPT" --adv_emb "artifacts/adv_emb_eps${E}.npz"
+run_one() {  # $1 = TAG (eps16 / emb20), $2... = clip_attack args
+    local TAG="$1"; shift
+    echo "=== [3] attack ($TAG) ==="
+    python clip_attack.py $COMMON --steps "$STEPS" "$@"
+    echo "=== [3b] re-quantize ($TAG) ==="
+    python requantize.py $COMMON --ckpt_path "$RQVAE_CKPT" \
+        --adv_emb "artifacts/adv_emb_${TAG}.npz"
+    echo "=== [4] evaluate ($TAG) ==="
+    python run_eval.py $COMMON --ckpt_path "$MODEL_CKPT" \
+        --attacked_index "artifacts/index_vitemb_ATTACKED_${TAG}.json" \
+        --requant_diag "artifacts/requant_diag_${TAG}.json"
+}
 
-    echo "=== [4/4] evaluate (eps=$E/255) ==="
-    python run_eval.py --data_path "$DATA_PATH" --dataset "$DATASET" \
-        --ckpt_path "$MODEL_CKPT" \
-        --attacked_index "artifacts/index_vitemb_ATTACKED_eps${E}.json" \
-        --requant_diag "artifacts/requant_diag_eps${E}.json"
+for B in $BUDGETS; do
+    if [ "$MODE" = "pixel" ]; then
+        EPS=$(python3 -c "print($B/255)")
+        run_one "eps${B}" --mode pixel --eps "$EPS" --save_adv_images
+    else
+        RHO=$(python3 -c "print($B/100)")
+        run_one "emb${B}" --mode embedding --emb_rho "$RHO"
+    fi
 done
 
 echo "=== done. results in attack/artifacts/eval_*.json ==="
