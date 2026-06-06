@@ -29,19 +29,25 @@ set -e
 set -o pipefail
 export NCCL_P2P_DISABLE=1 NCCL_IB_DISABLE=1
 
-cd "$(dirname "$0")"
+# Resolve user-facing paths against the INVOCATION dir (usually the repo root)
+# BEFORE we cd into attack/, so repo-root-relative args like
+# 'index/log/.../best_collision_model.pth' keep working.
+abspath() { case "$1" in /*) printf '%s' "$1";; *) printf '%s' "$PWD/$1";; esac; }
 
 MODE=${MODE:-pixel}
 DATASET=${DATASET:-Instruments}
-DATA_PATH=${DATA_PATH:-../data}
+DATA_PATH=$(abspath "${DATA_PATH:-data}")
 NUM_TASKS=${NUM_TASKS:-200}
 EPS_LIST=${EPS_LIST:-"16 32 64"}        # pixel: L_inf in /255
 RHO_LIST=${RHO_LIST:-"10 20 30 50"}     # embedding: L2 budget in % of ||x||
 STEPS=${STEPS:-30}
-MODEL_CKPT=${MODEL_CKPT:-../log/$DATASET}
-RQVAE_CKPT=${RQVAE_CKPT:-../index/log/$DATASET/ViT-L-14_256/best_collision_model.pth}
+MODEL_CKPT=$(abspath "${MODEL_CKPT:-log/$DATASET}")
+RQVAE_CKPT=$(abspath "${RQVAE_CKPT:-index/log/$DATASET/ViT-L-14_256/best_collision_model.pth}")
+[ -n "${META_DATA_PATH:-}" ] && META_DATA_PATH=$(abspath "$META_DATA_PATH")
 GPUS=${GPUS:-0}
 export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPUS}
+
+cd "$(dirname "$0")"                     # into attack/ (absolute paths above stay valid)
 
 [ -f "$RQVAE_CKPT" ] || { echo "ERROR: RQ-VAE ckpt not found: $RQVAE_CKPT"; exit 1; }
 [ -d "$MODEL_CKPT" ] || { echo "ERROR: recommender dir not found: $MODEL_CKPT"; exit 1; }
