@@ -40,6 +40,8 @@ DATA_PATH=$(abspath "${DATA_PATH:-data}")
 NUM_TASKS=${NUM_TASKS:-200}
 PROMOTE=${PROMOTE:-0}                    # 1 = promote COLD non-interacted target items
 N_TARGETS=${N_TARGETS:-5}               # [promote] how many cold targets
+HIJACK_ID=${HIJACK_ID:-29}              # [hijack] popular item whose code is forged onto targets
+[ "$MODE" = "hijack" ] && PROMOTE=1     # hijack only makes sense as a promotion attack
 EPS_LIST=${EPS_LIST:-"16 32 64"}        # pixel: L_inf in /255
 RHO_LIST=${RHO_LIST:-"10 20 30 50"}     # embedding: L2 budget in % of ||x||
 STEPS=${STEPS:-30}
@@ -51,7 +53,7 @@ export CUDA_VISIBLE_DEVICES=${CUDA_VISIBLE_DEVICES:-$GPUS}
 
 cd "$(dirname "$0")"                     # into attack/ (absolute paths above stay valid)
 
-[ -f "$RQVAE_CKPT" ] || { echo "ERROR: RQ-VAE ckpt not found: $RQVAE_CKPT"; exit 1; }
+[ "$MODE" = "hijack" ] || [ -f "$RQVAE_CKPT" ] || { echo "ERROR: RQ-VAE ckpt not found: $RQVAE_CKPT"; exit 1; }
 [ -d "$MODEL_CKPT" ] || { echo "ERROR: recommender dir not found: $MODEL_CKPT"; exit 1; }
 
 COMMON="--data_path $DATA_PATH --dataset $DATASET"
@@ -60,6 +62,18 @@ echo "=== [1] sample tasks ==="
 SAMPLE_ARGS="--num_tasks $NUM_TASKS"
 [ "$PROMOTE" = "1" ] && SAMPLE_ARGS="$SAMPLE_ARGS --promote --n_targets $N_TARGETS"
 python sample_tasks.py $COMMON $SAMPLE_ARGS
+
+if [ "$MODE" = "hijack" ]; then
+    TAG="hijack${HIJACK_ID}"
+    echo "=== [3] code hijack -> item $HIJACK_ID ==="
+    python hijack_codes.py $COMMON --hijack_id "$HIJACK_ID"
+    echo "=== [4] evaluate ($TAG) ==="
+    python run_eval.py $COMMON --ckpt_path "$MODEL_CKPT" \
+        --attacked_index "artifacts/index_vitemb_ATTACKED_${TAG}.json" \
+        --requant_diag "artifacts/hijack_diag_${TAG}.json"
+    echo "=== done. results in attack/artifacts/eval_*.json ==="
+    exit 0
+fi
 
 if [ "$MODE" = "pixel" ]; then
     : "${META_DATA_PATH:?MODE=pixel needs META_DATA_PATH (dir with meta_<FullName>.json.gz)}"
